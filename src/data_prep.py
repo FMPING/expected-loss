@@ -70,32 +70,50 @@ def generate_synthetic_portfolio(
     pd_true = 1 / (1 + np.exp(-log_odds))
     default = rng.binomial(1, pd_true).astype(int)
 
-    # LGD — beta distributed, higher for lower grades
+    # LGD — beta distributed, higher for lower credit grades (A≈30%, G≈78%).
+    # Sample LGD directly so grade_idx has the correct positive relationship.
     lgd_mean  = 0.30 + 0.08 * grade_idx
     lgd_alpha = lgd_mean * 5
     lgd_beta  = (1 - lgd_mean) * 5
-    recovery  = rng.beta(lgd_alpha, lgd_beta, n).clip(0.01, 0.99)
-    lgd       = 1 - recovery
+    lgd       = rng.beta(lgd_alpha, lgd_beta, n).clip(0.01, 0.99)
 
-    # EAD — utilisation fraction of loan amount
-    ead_util  = rng.beta(5, 2, n).clip(0.5, 1.0)
-    ead       = loan_amnt * ead_util
+    # EAD — remaining balance fraction at time of default, via amortisation formula.
+    # Riskier borrowers default earlier → more balance outstanding → higher CCF.
+    monthly_rate    = int_rate / 12
+    monthly_payment = loan_amnt * monthly_rate / (1 - (1 + monthly_rate) ** (-term))
+
+    risk_score = (
+        (grade_idx / 6.0) * 0.40
+        + (dti / 0.60)    * 0.30
+        + np.clip((680 - fico_score) / 100, 0, 1) * 0.30
+    )
+    mean_month        = (term * (0.40 + 0.50 * (1 - risk_score))).clip(6, term - 1)
+    months_to_default = rng.normal(mean_month, term * 0.12, n).clip(6, term - 1).astype(int)
+
+    remaining = (
+        monthly_payment
+        * (1 - (1 + monthly_rate) ** (-(term - months_to_default)))
+        / monthly_rate
+    )
+    ead_util = (remaining / loan_amnt).clip(0.10, 1.0)
+    ead      = loan_amnt * ead_util
 
     df = pd.DataFrame({
-        "loan_id":      range(n),
-        "loan_amnt":    loan_amnt,
-        "int_rate":     int_rate.round(4),
-        "annual_inc":   annual_inc.round(0),
-        "dti":          dti.round(4),
-        "fico_score":   fico_score,
-        "term":         term,
-        "grade":        grade,
-        "grade_idx":    grade_idx,
-        "default":      default,
-        "lgd":          lgd.round(4),
-        "ead":          ead.round(2),
-        "ead_util":     ead_util.round(4),
-        "pd_true":      pd_true.round(4),
+        "loan_id":            range(n),
+        "loan_amnt":          loan_amnt,
+        "int_rate":           int_rate.round(4),
+        "annual_inc":         annual_inc.round(0),
+        "dti":                dti.round(4),
+        "fico_score":         fico_score,
+        "term":               term,
+        "grade":              grade,
+        "grade_idx":          grade_idx,
+        "default":            default,
+        "lgd":                lgd.round(4),
+        "ead":                ead.round(2),
+        "ead_util":           ead_util.round(4),
+        "months_to_default":  months_to_default,
+        "pd_true":            pd_true.round(4),
     })
 
     print(f"[data_prep] Portfolio: {n:,} loans")

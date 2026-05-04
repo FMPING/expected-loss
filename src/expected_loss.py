@@ -102,7 +102,7 @@ def run_el_pipeline(df_train, df_test) -> dict:
     lgd_model, lgd_scaler = fit_lgd_model(df_train)
 
     print("\n--- Fitting EAD model ---")
-    ead_model, ead_scaler = fit_ead_model(df_train)
+    ead_model, ead_scaler = fit_ead_model(df_train, df_test)
 
     print("\n--- Predicting on test set ---")
     pd_pred  = predict_pd(pd_model,   pd_scaler,  df_test)
